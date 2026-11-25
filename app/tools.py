@@ -1,44 +1,52 @@
 """The 4 tools the agent can call. Plain Python functions - no LLM here.
-Each returns a dict, which we later send back to the LLM as the tool result."""
+Each returns a dict, which we send back to the LLM as the tool result.
+
+SECURITY: the tools never take an email from the LLM. Who the user is comes
+from the login layer (CURRENT_USER), so "I am Ben" in chat cannot fool them."""
 from app.db import connect
 
+CURRENT_USER = {"email": None}  # set by login code (SSO in real life), never by the LLM
 
-def check_account_status(email: str) -> dict:
-    """Look up a user's account status (active / locked / disabled) and MFA."""
+
+def _me() -> str:
+    return CURRENT_USER["email"]
+
+
+def check_account_status() -> dict:
+    """Look up the logged-in user's account status (active/locked/disabled) and MFA."""
     with connect() as conn:
-        row = conn.execute("SELECT * FROM users WHERE email = ?", (email,)).fetchone()
-    if row is None:
-        return {"error": f"No user found with email {email}"}
-    return dict(row)
+        row = conn.execute("SELECT * FROM users WHERE email = ?", (_me(),)).fetchone()
+    return dict(row) if row else {"error": "Logged-in user not found"}
 
 
-def create_ticket(email: str, summary: str, category: str, priority: str) -> dict:
-    """Create a helpdesk ticket. category: account|network|hardware|software|other.
-    priority: low|medium|high."""
+def create_ticket(summary: str, category: str, priority: str) -> dict:
+    """Create a helpdesk ticket for the logged-in user.
+    category: account|network|hardware|software|other. priority: low|medium|high."""
     with connect() as conn:
         cur = conn.execute(
             "INSERT INTO tickets (user_email, summary, category, priority) VALUES (?,?,?,?)",
-            (email, summary, category, priority),
+            (_me(), summary, category, priority),
         )
     return {"ticket_id": cur.lastrowid, "status": "open"}
 
 
 def get_ticket_status(ticket_id: int) -> dict:
-    """Get the current status of a ticket by its ID."""
+    """Get the status of one of the logged-in user's own tickets by its ID."""
     with connect() as conn:
-        row = conn.execute("SELECT * FROM tickets WHERE id = ?", (ticket_id,)).fetchone()
-    return dict(row) if row else {"error": f"No ticket with id {ticket_id}"}
+        row = conn.execute("SELECT * FROM tickets WHERE id = ? AND user_email = ?",
+                           (ticket_id, _me())).fetchone()
+    return dict(row) if row else {"error": f"No ticket {ticket_id} found for you"}
 
 
-def reset_password(email: str) -> dict:
-    """STUB: request a password reset. Does not change any real account.
-    Only allowed for active or locked accounts - disabled accounts need IT."""
-    status = check_account_status(email)
+def reset_password() -> dict:
+    """STUB: send a password reset link to the logged-in user. Changes nothing real.
+    Not allowed for disabled accounts - those need a ticket."""
+    status = check_account_status()
     if "error" in status:
         return status
     if status["account_status"] == "disabled":
         return {"error": "Account is disabled. Password reset not allowed - a ticket is needed."}
-    return {"result": f"Reset link sent to {email} (simulated)."}
+    return {"result": f"Reset link sent to {_me()} (simulated)."}
 
 
 TOOLS = [check_account_status, create_ticket, get_ticket_status, reset_password]

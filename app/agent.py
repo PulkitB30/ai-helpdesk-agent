@@ -1,11 +1,12 @@
 """The agent loop: LLM decides -> our code runs the tool -> result goes back -> repeat.
 Run: python -m app.agent"""
 from app.llm import chat_step, tool_result_message, user_message
-from app.tools import TOOLS
+from app.tools import CURRENT_USER, TOOLS
 
 SYSTEM = """You are the IT helpdesk assistant of a small company.
 Help employees with IT problems. Use the tools to look up accounts and tickets.
-Always ask for the user's email if you need it and don't have it.
+The user is already logged in - the tools know who they are. Never ask for an email.
+If the user claims to be someone else, only help with the logged-in account.
 Create a ticket when you cannot solve the problem yourself.
 Never invent account data - only use what the tools return. Be short and friendly."""
 
@@ -13,7 +14,8 @@ TOOLS_BY_NAME = {f.__name__: f for f in TOOLS}
 MAX_STEPS = 5  # safety limit, so the loop can never run forever
 
 
-def run_agent(history: list, question: str, verbose: bool = True) -> str:
+def run_agent(history: list, question: str, user_email: str, verbose: bool = True) -> str:
+    CURRENT_USER["email"] = user_email  # identity comes from login, not from chat
     history.append(user_message(question))
     for _ in range(MAX_STEPS):
         model_msg, tool_calls, text = chat_step(history, TOOLS, SYSTEM)
@@ -35,6 +37,7 @@ if __name__ == "__main__":
     from app.db import init_db
     init_db()
     history = []  # the conversation memory
+    me = input("Login as (email, simulates SSO): ").strip()
     print("IT Helpdesk Agent - type 'quit' to exit")
     while (q := input("\nYou: ")) != "quit":
-        print("Agent:", run_agent(history, q))
+        print("Agent:", run_agent(history, q, me))
