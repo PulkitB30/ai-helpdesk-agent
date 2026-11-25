@@ -15,7 +15,9 @@ def _me() -> str:
 def check_account_status() -> dict:
     """Look up the logged-in user's account status (active/locked/disabled) and MFA."""
     with connect() as conn:
-        row = conn.execute("SELECT * FROM users WHERE email = ?", (_me(),)).fetchone()
+        # data minimization: only the fields the LLM needs - no email, name, department
+        row = conn.execute("SELECT account_status, mfa_enabled FROM users WHERE email = ?",
+                           (_me(),)).fetchone()
     return dict(row) if row else {"error": "Logged-in user not found"}
 
 
@@ -33,7 +35,8 @@ def create_ticket(summary: str, category: str, priority: str) -> dict:
 def get_ticket_status(ticket_id: int) -> dict:
     """Get the status of one of the logged-in user's own tickets by its ID."""
     with connect() as conn:
-        row = conn.execute("SELECT * FROM tickets WHERE id = ? AND user_email = ?",
+        row = conn.execute("SELECT id, summary, category, priority, status, created_at "
+                           "FROM tickets WHERE id = ? AND user_email = ?",
                            (ticket_id, _me())).fetchone()
     return dict(row) if row else {"error": f"No ticket {ticket_id} found for you"}
 
@@ -46,7 +49,7 @@ def reset_password() -> dict:
         return status
     if status["account_status"] == "disabled":
         return {"error": "Account is disabled. Password reset not allowed - a ticket is needed."}
-    return {"result": f"Reset link sent to {_me()} (simulated)."}
+    return {"result": "Reset link sent to the user's registered email (simulated)."}
 
 
 TOOLS = [check_account_status, create_ticket, get_ticket_status, reset_password]
