@@ -1,0 +1,9 @@
+# secrets - never commit
+.env
+# python
+.venv/
+__pycache__/
+*.pyc
+# local data created at runtime
+*.db
+chroma/
