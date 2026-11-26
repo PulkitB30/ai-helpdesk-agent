@@ -3,6 +3,17 @@ Step 2 (this part): chunking."""
 from pathlib import Path
 
 DOCS_DIR = Path(__file__).parent.parent / "data" / "docs"
+MAX_WORDS = 300  # long sections are split, so each chunk stays about one topic
+OVERLAP = 50     # repeat last 50 words in the next part, so no sentence is lost at a cut
+
+
+def split_long(text: str) -> list[str]:
+    """Split text into parts of max MAX_WORDS words, with OVERLAP words overlap."""
+    words = text.split()
+    if len(words) <= MAX_WORDS:
+        return [text]
+    step = MAX_WORDS - OVERLAP
+    return [" ".join(words[i:i + MAX_WORDS]) for i in range(0, len(words) - OVERLAP, step)]
 
 
 def chunk_markdown(path: Path) -> list[dict]:
@@ -12,11 +23,15 @@ def chunk_markdown(path: Path) -> list[dict]:
 
     def save():
         text = "\n".join(lines).strip()
-        if text:
+        if not text:
+            return
+        parts = split_long(text)
+        for n, part in enumerate(parts, start=1):
+            suffix = f" (part {n})" if len(parts) > 1 else ""
             chunks.append({
-                "id": f"{path.name}#{section}",       # unique id, also our citation
+                "id": f"{path.name}#{section}{suffix}",  # unique id, also our citation
                 "source": path.name,
-                "text": f"{title} > {section}\n{text}",
+                "text": f"{title} > {section}{suffix}\n{part}",  # title prefix on every part
             })
 
     for line in path.read_text().splitlines():
