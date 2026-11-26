@@ -34,6 +34,11 @@ def init_db() -> None:
         conn.executemany("INSERT OR IGNORE INTO users VALUES (?,?,?,?,?)", USERS)
 
 
+def user_exists(email: str) -> bool:
+    with connect() as conn:
+        return conn.execute("SELECT 1 FROM users WHERE email = ?", (email,)).fetchone() is not None
+
+
 if __name__ == "__main__":
     init_db()
     with connect() as conn:

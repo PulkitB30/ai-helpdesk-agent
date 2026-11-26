@@ -34,10 +34,12 @@ def run_agent(history: list, question: str, user_email: str, verbose: bool = Tru
 
 
 if __name__ == "__main__":
-    from app.db import init_db
+    from app.db import init_db, user_exists
     init_db()
     history = []  # the conversation memory
     me = input("Login as (email, simulates SSO): ").strip()
+    while not user_exists(me):  # check A: unknown users never reach the agent
+        me = input("Unknown user. Try again: ").strip()
     print("IT Helpdesk Agent - type 'quit' to exit")
     while (q := input("\nYou: ")) != "quit":
         print("Agent:", run_agent(history, q, me))
