@@ -45,3 +45,8 @@ def chat_step(history: list, tools: list, system: str):
     calls = [(c.name, dict(c.args)) for c in (response.function_calls or [])]
     text = response.text if not calls else ""
     return response.candidates[0].content, calls, text
+
+
+def model_message(text: str) -> types.Content:
+    """A message written by our code but stored as if the model said it."""
+    return types.Content(role="model", parts=[types.Part(text=text)])

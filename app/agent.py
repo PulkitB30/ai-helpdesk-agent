@@ -1,6 +1,6 @@
 """The agent loop: LLM decides -> our code runs the tool -> result goes back -> repeat.
 Run: python -m app.agent"""
-from app.llm import chat_step, tool_result_message, user_message
+from app.llm import chat_step, model_message, tool_result_message, user_message
 from app.tools import CURRENT_USER, TOOLS
 
 SYSTEM = """You are the IT helpdesk assistant of a small company.
@@ -13,9 +13,34 @@ Never invent account data - only use what the tools return. Be short and friendl
 TOOLS_BY_NAME = {f.__name__: f for f in TOOLS}
 MAX_STEPS = 5  # safety limit, so the loop can never run forever
 
+# Human-in-the-loop: "write" tools change something, so the user must confirm first.
+# "Read" tools (check status, get ticket) run automatically.
+NEEDS_CONFIRMATION = {"create_ticket", "reset_password"}
+PENDING = {"call": None}  # the write action waiting for the user's yes/no
+
+
+def handle_confirmation(history: list, answer: str) -> str | None:
+    """If an action is waiting, run it on 'yes' or cancel it. Returns reply or None."""
+    name, args = PENDING["call"]
+    PENDING["call"] = None
+    if answer.strip().lower() not in {"yes", "y", "ja", "ok"}:
+        if answer.strip().lower() in {"no", "n", "nein"}:
+            reply = "OK, cancelled. Nothing was changed."
+            history += [user_message(answer), model_message(reply)]
+            return reply
+        return None  # user said something else -> cancel and treat as a new question
+    result = TOOLS_BY_NAME[name](**args)  # our code runs it, not the LLM
+    reply = f"Done: {result}"
+    history += [user_message(answer), model_message(reply)]
+    return reply
+
 
 def run_agent(history: list, question: str, user_email: str, verbose: bool = True) -> str:
     CURRENT_USER["email"] = user_email  # identity comes from login, not from chat
+    if PENDING["call"]:
+        reply = handle_confirmation(history, question)
+        if reply:
+            return reply
     history.append(user_message(question))
     for _ in range(MAX_STEPS):
         model_msg, tool_calls, text = chat_step(history, TOOLS, SYSTEM)
@@ -26,10 +51,19 @@ def run_agent(history: list, question: str, user_email: str, verbose: bool = Tru
             if verbose:
                 print(f"  [tool] {name}({args})")
             func = TOOLS_BY_NAME.get(name)
-            result = func(**args) if func else {"error": f"Unknown tool {name}"}
+            if name in NEEDS_CONFIRMATION and not PENDING["call"]:
+                PENDING["call"] = (name, args)  # hold it - do NOT run yet
+                result = {"status": "waiting for user confirmation - not done yet"}
+            else:
+                result = func(**args) if func else {"error": f"Unknown tool {name}"}
             if verbose:
                 print(f"  [result] {result}")
             history.append(tool_result_message(name, result))
+        if PENDING["call"]:
+            name, args = PENDING["call"]
+            question = f"I would like to run: {name} {args or ''}. Shall I do it? (yes/no)"
+            history.append(model_message(question))
+            return question
     return "Sorry, I could not finish this request. Please contact IT directly."
 
 
