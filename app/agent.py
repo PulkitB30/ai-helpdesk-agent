@@ -19,6 +19,28 @@ NEEDS_CONFIRMATION = {"create_ticket", "reset_password"}
 PENDING = {"call": None}  # the write action waiting for the user's yes/no
 
 
+def describe_action(name: str, args: dict) -> str:
+    """Human-readable confirm question. A template, not the LLM: the text must match
+    exactly what will be executed."""
+    if name == "create_ticket":
+        return (f"I can create a ticket for you:\n  Problem: {args.get('summary')}\n"
+                f"  Category: {args.get('category')}, priority: {args.get('priority')}\n"
+                "Shall I create it? (yes/no)")
+    if name == "reset_password":
+        return "I can send a password reset link to your registered email. Shall I send it? (yes/no)"
+    return f"Shall I run {name}? (yes/no)"
+
+
+def describe_result(name: str, result: dict) -> str:
+    if "error" in result:
+        return f"Sorry, that did not work: {result['error']}"
+    if name == "create_ticket":
+        return f"Done! Your ticket #{result['ticket_id']} is created. IT will contact you."
+    if name == "reset_password":
+        return "Done! Check your email for the reset link."
+    return "Done."
+
+
 def handle_confirmation(history: list, answer: str) -> str | None:
     """If an action is waiting, run it on 'yes' or cancel it. Returns reply or None."""
     name, args = PENDING["call"]
@@ -30,7 +52,7 @@ def handle_confirmation(history: list, answer: str) -> str | None:
             return reply
         return None  # user said something else -> cancel and treat as a new question
     result = TOOLS_BY_NAME[name](**args)  # our code runs it, not the LLM
-    reply = f"Done: {result}"
+    reply = describe_result(name, result)
     history += [user_message(answer), model_message(reply)]
     return reply
 
@@ -61,7 +83,7 @@ def run_agent(history: list, question: str, user_email: str, verbose: bool = Tru
             history.append(tool_result_message(name, result))
         if PENDING["call"]:
             name, args = PENDING["call"]
-            question = f"I would like to run: {name} {args or ''}. Shall I do it? (yes/no)"
+            question = describe_action(name, args)
             history.append(model_message(question))
             return question
     return "Sorry, I could not finish this request. Please contact IT directly."
