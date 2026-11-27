@@ -50,3 +50,17 @@ def chat_step(history: list, tools: list, system: str):
 def model_message(text: str) -> types.Content:
     """A message written by our code but stored as if the model said it."""
     return types.Content(role="model", parts=[types.Part(text=text)])
+
+
+EMBED_MODEL = "gemini-embedding-001"
+
+
+def embed(texts: list[str], task: str = "RETRIEVAL_DOCUMENT") -> list[list[float]]:
+    """Turn texts into vectors (lists of numbers that capture meaning).
+    task: RETRIEVAL_DOCUMENT for chunks we store, RETRIEVAL_QUERY for user questions."""
+    result = client.models.embed_content(
+        model=EMBED_MODEL,
+        contents=texts,
+        config=types.EmbedContentConfig(task_type=task, output_dimensionality=768),
+    )
+    return [e.values for e in result.embeddings]
